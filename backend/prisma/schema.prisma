@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+//  ENUMS
+// ─────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  CLINIC_USER
+}
+
+// ─────────────────────────────────────────────────────────
+//  CLINICS — One row per tenant
+// ─────────────────────────────────────────────────────────
+
+model Clinic {
+  id                     Int      @id @default(autoincrement())
+  name                   String
+  email                  String   @unique
+  phone                  String?
+  whatsapp_instance_name String?  @unique  // maps to Evolution API instance
+  whatsapp_api_key       String?           // per-clinic Evolution API key
+  created_at             DateTime @default(now())
+
+  users               User[]
+  patients            Patient[]
+  appointments        Appointment[]
+  doctors             Doctor[]
+  messages            Message[]
+  conversation_memory ConversationMemory[]
+  automation_logs     AutomationLog[]
+
+  @@map("clinics")
+}
+
+// ─────────────────────────────────────────────────────────
+//  USERS — Auth table; clinic_id null for SUPER_ADMIN
+// ─────────────────────────────────────────────────────────
+
+model User {
+  id            Int      @id @default(autoincrement())
+  clinic_id     Int?                       // null = SUPER_ADMIN
+  email         String   @unique
+  password_hash String
+  role          Role     @default(CLINIC_USER)
+  created_at    DateTime @default(now())
+
+  clinic Clinic? @relation(fields: [clinic_id], references: [id], onDelete: SetNull)
+
+  @@index([clinic_id])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────
+//  PATIENTS
+// ─────────────────────────────────────────────────────────
+
+model Patient {
+  id         Int      @id @default(autoincrement())
+  clinic_id  Int
+  name       String
+  phone      String
+  notes      String?
+  risk_level String?  @default("low")    // low | medium | high | emergency
+  created_at DateTime @default(now())
+
+  clinic              Clinic               @relation(fields: [clinic_id], references: [id], onDelete: Cascade)
+  appointments        Appointment[]
+  messages            Message[]
+  conversation_memory ConversationMemory[]
+
+  @@unique([clinic_id, phone])            // same phone can exist in different clinics
+  @@index([clinic_id])
+  @@index([phone])
+  @@map("patients")
+}
+
+// ─────────────────────────────────────────────────────────
+//  DOCTORS
+// ─────────────────────────────────────────────────────────
+
+model Doctor {
+  id         Int      @id @default(autoincrement())
+  clinic_id  Int
+  name       String
+  specialty  String?
+  schedule   Json?    // e.g. {"mon":["09:00","17:00"], "tue":["09:00","13:00"]}
+  created_at DateTime @default(now())
+
+  clinic       Clinic        @relation(fields: [clinic_id], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([clinic_id])
+  @@map("doctors")
+}
+
+// ─────────────────────────────────────────────────────────
+//  APPOINTMENTS
+// ─────────────────────────────────────────────────────────
+
+model Appointment {
+  id               Int      @id @default(autoincrement())
+  clinic_id        Int
+  patient_id       Int?
+  doctor_id        Int?
+  appointment_date DateTime @db.Date
+  appointment_time String                  // "09:00", "10:30", etc.
+  status           String   @default("scheduled")  // scheduled | confirmed | completed | cancelled | no_show
+  notes            String?
+  source           String?  @default("manual")     // manual | whatsapp | n8n
+  created_at       DateTime @default(now())
+
+  clinic   Clinic   @relation(fields: [clinic_id], references: [id], onDelete: Cascade)
+  patient  Patient? @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+  doctor   Doctor?  @relation(fields: [doctor_id], references: [id], onDelete: SetNull)
+
+  @@index([clinic_id])
+  @@index([clinic_id, appointment_date])
+  @@index([patient_id])
+  @@map("appointments")
+}
+
+// ─────────────────────────────────────────────────────────
+//  MESSAGES — WhatsApp message log
+// ─────────────────────────────────────────────────────────
+
+model Message {
+  id         Int      @id @default(autoincrement())
+  clinic_id  Int
+  patient_id Int?
+  phone      String?
+  direction  String                        // inbound | outbound
+  message    String
+  status     String   @default("delivered") // received | sent | delivered | failed
+  timestamp  DateTime @default(now())
+
+  clinic  Clinic   @relation(fields: [clinic_id], references: [id], onDelete: Cascade)
+  patient Patient? @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+
+  @@index([clinic_id])
+  @@index([clinic_id, patient_id])
+  @@index([phone])
+  @@map("messages")
+}
+
+// ─────────────────────────────────────────────────────────
+//  CONVERSATION MEMORY — AI chat context per patient
+// ─────────────────────────────────────────────────────────
+
+model ConversationMemory {
+  id         Int      @id @default(autoincrement())
+  clinic_id  Int
+  patient_id Int?
+  phone      String?
+  role       String                        // user | assistant
+  content    String
+  intent     String?
+  sentiment  String?
+  confidence Float?
+  session_id String?
+  timestamp  DateTime @default(now())
+
+  clinic  Clinic   @relation(fields: [clinic_id], references: [id], onDelete: Cascade)
+  patient Patient? @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+
+  @@index([clinic_id])
+  @@index([clinic_id, phone])
+  @@index([session_id])
+  @@map("conversation_memory")
+}
+
+// ─────────────────────────────────────────────────────────
+//  AUTOMATION LOGS — n8n + system event audit trail
+// ─────────────────────────────────────────────────────────
+
+model AutomationLog {
+  id         Int      @id @default(autoincrement())
+  clinic_id  Int?
+  event_type String
+  phone      String?
+  workflow   String?
+  result     String?
+  error      String?
+  timestamp  DateTime @default(now())
+
+  clinic Clinic? @relation(fields: [clinic_id], references: [id], onDelete: SetNull)
+
+  @@index([clinic_id])
+  @@index([event_type])
+  @@map("automation_logs")
+}

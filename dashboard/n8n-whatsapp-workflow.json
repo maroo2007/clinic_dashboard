@@ -1,0 +1,112 @@
+{
+  "name": "WhatsApp → Supabase (Apex Automations)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "whatsapp-inbound-apex"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise the payload regardless of WhatsApp provider (Meta, Twilio, etc.)\nconst body = $input.first().json;\n\n// --- Meta Cloud API format ---\nlet phone = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from;\nlet text  = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body;\n\n// --- Twilio format fallback ---\nif (!phone) phone = body?.From || body?.from;\nif (!text)  text  = body?.Body  || body?.body  || body?.text;\n\n// --- Raw payload fallback (direct POST from n8n test) ---\nif (!phone) phone = body?.patient_phone;\nif (!text)  text  = body?.message_body || body?.body;\n\nconst clinicId  = body?.clinic_id  || \"c0000000-0000-0000-0000-000000000001\";\nconst direction = body?.direction  || \"inbound\";\n\nif (!phone || !text) {\n  throw new Error(`Cannot extract phone or message from payload: ${JSON.stringify(body)}`);\n}\n\nreturn [{ json: { clinic_id: clinicId, patient_phone: phone, direction, message_body: text } }];"
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Normalise Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_DASHBOARD_DOMAIN/api/webhook/whatsapp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer apex_wh_yvwpgpsl_2026_secure"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ received: true, id: $json.message?.id }) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [{ "node": "Normalise Payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalise Payload": {
+      "main": [
+        [{ "node": "Save to Supabase", "type": "main", "index": 0 }]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [{ "node": "Respond 200", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "apex-automations"
+  },
+  "_comment": {
+    "webhook_secret": "apex_wh_yvwpgpsl_2026_secure",
+    "supabase_postgres_direct": {
+      "note": "Alternative: use n8n Postgres node instead of HTTP Request",
+      "host": "db.yvwpgpslamxvgwybdfjk.supabase.co",
+      "port": 5432,
+      "database": "postgres",
+      "user": "postgres",
+      "ssl": "require",
+      "query": "INSERT INTO public.messages (clinic_id, patient_phone, direction, body) VALUES ('{{ $json.clinic_id }}', '{{ $json.patient_phone }}', '{{ $json.direction }}', '{{ $json.message_body }}') RETURNING id"
+    }
+  }
+}
