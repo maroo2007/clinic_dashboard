@@ -15,8 +15,8 @@ async function main() {
       name: 'Dr Smile Dental — Clinic A',
       email: 'clinica@dentaflow.com',
       phone: '+201001234567',
-      whatsapp_instance_name: 'Ali Sakr',
-      whatsapp_api_key: 'evo_key_x9f3m7k2',
+      whatsapp_instance_name: process.env.DEFAULT_WA_INSTANCE || 'your-instance-name',
+      whatsapp_api_key: process.env.EVOLUTION_API_KEY || null,
     },
   });
   console.log(`✅ Clinic A created (id: ${clinicA.id})`);

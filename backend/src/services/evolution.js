@@ -1,9 +1,9 @@
 const axios = require('axios');
 const prisma = require('../config/prisma');
 
-const EVO_BASE = process.env.EVOLUTION_API_BASE_URL || 'http://46.101.210.108:8080';
-const EVO_GLOBAL_KEY = process.env.EVOLUTION_API_KEY || 'evo_key_x9f3m7k2';
-const DEFAULT_INSTANCE = process.env.DEFAULT_WA_INSTANCE || 'whatsapp-bot';
+const EVO_BASE = process.env.EVOLUTION_API_BASE_URL;
+const EVO_GLOBAL_KEY = process.env.EVOLUTION_API_KEY;
+const DEFAULT_INSTANCE = process.env.DEFAULT_WA_INSTANCE || 'default-instance';
 
 /**
  * Get Evolution API credentials for a specific clinic.
